@@ -29,7 +29,7 @@
     </header>
 
 <section class="卷"><div class="指标" id="指标"></div></section>
-<section class="卷"><table><thead><tr><th>事件号</th><th>事件类型</th><th>端点键</th><th>状态</th></tr></thead><tbody id="表"></tbody></table></section>
+<section class="卷"><table><thead><tr><th>事件号</th><th>事件类型</th><th>端点键</th><th>状态</th><th>中文命运</th></tr></thead><tbody id="表"></tbody></table></section>
 <section class="卷"><p class="说明" id="主链"></p><button class="按钮" type="button" id="互证钮">跑投递互证</button><pre id="互证出" class="说明"></pre></section>
 
   </main>
@@ -48,8 +48,12 @@
   document.getElementById('主链').textContent = c.主链 || '';
   const rows = await 投递台.getJSON('/api/事件');
   const tb = document.getElementById('表');
+  const 命运图 = {
+    '待投':'待投：已入队等投递','投递中':'投递中：失败计次重试','待确认':'待确认：待互证结案',
+    '已投递':'已投递：成功结案','死信':'死信：达阈入匣，过自动重投闸','已作废':'已作废：终态不投'
+  };
   for (const r of rows.slice(0,12)) {
-    const tr = 投递台.行('<td>'+投递台.安全文本(r.事件号)+'</td><td>'+投递台.安全文本(r.事件类型)+'</td><td>'+投递台.安全文本(r.端点键)+'</td><td></td>');
+    const tr = 投递台.行('<td><a href="/事件详情.html?事件号='+encodeURIComponent(r.事件号)+'">'+投递台.安全文本(r.事件号)+'</a></td><td>'+投递台.安全文本(r.事件类型)+'</td><td>'+投递台.安全文本(r.端点键)+'</td><td></td><td>'+投递台.安全文本(r.命运 || 命运图[r.状态] || r.状态)+'</td>');
     tr.children[3].appendChild(投递台.徽章(r.状态)); tb.appendChild(tr);
   }
   document.getElementById('互证钮').onclick = async () => {

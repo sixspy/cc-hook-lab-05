@@ -24,44 +24,179 @@
   </header>
   <main class="主区">
     <header class="页头">
-      <h1>死信匣</h1>
+      <h1>死信匣 · 自动重投闸</h1>
       <p>Webhook 投递控制台 · 应用开发全栈 · 非工单客服</p>
+      <p class="说明">骨签：hook-05-死信自动重投闸 ｜ 铁律：自动重投认失败次数阈，未达不得出匣；死信匣与事件队列同票。</p>
     </header>
 
 <section class="卷">
-  <label>事件号</label><input id="事件号"/>
+  <label>事件号</label><input id="事件号" placeholder="EVT-..."/>
   <p class="消息" id="消息"></p>
+  <button class="按钮" type="button" id="自动重投钮">自动重投（认阈出匣）</button>
   <button class="按钮" type="button" id="重投钮">死信重投</button>
-  <button class="按钮 次" type="button" id="作废钮">作废</button>
+  <button class="按钮 次" type="button" id="作废钮">人工作废</button>
+  <button class="按钮 次" type="button" id="事故钮">灌「失败一次未达阈」事故夹具</button>
+  <button class="按钮 次" type="button" id="对账钮">死信匣对账</button>
 </section>
-<section class="卷"><div class="表绕"><table><thead><tr><th>死信号</th><th>事件号</th><th>端点键</th><th>失败次数</th><th>末次原因</th><th>状态</th></tr></thead><tbody id="表"></tbody></table></div></section>
+
+<section class="卷" id="闸口卷" hidden>
+  <h2>死信匣详情 · 中文闸口</h2>
+  <div class="指标" id="闸口卡"></div>
+  <p class="说明" id="闸口文案"></p>
+  <p class="说明" id="凭证文案"></p>
+</section>
+
+<section class="卷"><h2>匣内正式集合（库 · 死信 表，与 /api/死信 同源）</h2>
+  <div class="表绕"><table><thead><tr>
+    <th>死信号</th><th>事件号</th><th>端点键</th><th>失败次数</th><th>阈值</th>
+    <th>末次原因</th><th>匣状态</th><th>出匣态</th><th>事件态</th><th>中文闸口</th>
+  </tr></thead><tbody id="表"></tbody></table></div>
+</section>
+
+<section class="卷" id="凭证卷" hidden><h2>独立凭证 · 冻住失败次数指纹</h2>
+  <div class="表绕"><table><thead><tr>
+    <th>凭证号</th><th>判定</th><th>失败次数指纹</th><th>阈值</th><th>指纹哈希</th><th>凭证状态</th><th>时刻</th>
+  </tr></thead><tbody id="凭证表"></tbody></table></div>
+</section>
+
+<section class="卷"><h2>对账影子（独立读集合，不混进正式死信集合）</h2>
+  <p class="消息" id="对账消息"></p>
+  <div class="表绕"><table><thead><tr>
+    <th>影子号</th><th>事件号</th><th>类型</th><th>失败次数</th><th>阈值</th><th>中文判定</th><th>详情</th><th>批次时刻</th>
+  </tr></thead><tbody id="影子表"></tbody></table></div>
+</section>
 
   </main>
 
 <script>
+const $ = (id) => document.getElementById(id);
+
+async function 提交(url, body) {
+  const r = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (r.status === 401) { location.href = '/login'; throw new Error('未登录'); }
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, data };
+}
+
+function 显闸(v) {
+  if (!v) return;
+  $('闸口卷').hidden = false;
+  const cards = [
+    ['失败次数', (v.失败次数 ?? '—') + ' / 阈 ' + (v.阈值 ?? '—')],
+    ['出匣态', v.出匣态 || '—'],
+    ['事件态', v.事件态 || '—'],
+    ['放行', v.放行 ? '是·达阈出匣' : '否·未达留匣'],
+    ['同票', v.同票 === false ? '否' : '死信匣⇄事件队列同票'],
+  ];
+  $('闸口卡').innerHTML = cards.map(([k, val]) =>
+    '<div class="卡"><small>' + 投递台.安全文本(k) + '</small><b>' + 投递台.安全文本(val) + '</b></div>').join('');
+  $('闸口文案').textContent = '闸口：' + (v.闸口 || '—') + '　骨签：' + (v.骨签 || 'hook-05-死信自动重投闸');
+  if (v.凭证号) $('凭证文案').textContent = '凭证 ' + v.凭证号 + ' 已冻指纹 ' + (v.指纹哈希 || '');
+}
+
+async function 刷凭证(eid) {
+  const rows = await 投递台.getJSON('/api/死信/凭证?事件号=' + encodeURIComponent(eid));
+  if (!rows.length) { $('凭证卷').hidden = true; return; }
+  $('凭证卷').hidden = false;
+  $('凭证表').innerHTML = rows.map((r) =>
+    '<tr><td>' + 投递台.安全文本(r.凭证号) + '</td><td>' + 投递台.安全文本(r.判定) +
+    '</td><td>' + 投递台.安全文本(r.失败次数指纹) + '</td><td>' + 投递台.安全文本(r.阈值) +
+    '</td><td><code>' + 投递台.安全文本(String(r.指纹哈希 || '').slice(0, 16)) + '</code></td><td>' +
+    投递台.安全文本(r.状态) + '</td><td>' + 投递台.安全文本(r.时刻) + '</td></tr>').join('');
+}
+
+async function 选事件(eid) {
+  if (!eid) return;
+  $('事件号').value = eid;
+  try {
+    const d = await 投递台.getJSON('/api/事件/' + encodeURIComponent(eid));
+    if (d.死信) 显闸(Object.assign({ 事件态: d.状态 }, d.死信));
+    await 刷凭证(eid);
+  } catch (e) { /* 详情失败不阻塞表格 */ }
+}
+
 async function 刷表() {
   const rows = await 投递台.getJSON('/api/死信');
-  const tb = document.getElementById('表'); tb.innerHTML='';
+  const tb = $('表'); tb.innerHTML = '';
   for (const r of rows) {
-    const tr = 投递台.行('<td>'+投递台.安全文本(r.死信号)+'</td><td>'+投递台.安全文本(r.事件号)+'</td><td>'+投递台.安全文本(r.端点键)+'</td><td>'+投递台.安全文本(r.失败次数)+'</td><td>'+投递台.安全文本(r.末次原因)+'</td><td></td>');
-    tr.children[5].appendChild(投递台.徽章(r.状态)); tb.appendChild(tr);
+    const tr = 投递台.行(
+      '<td>' + 投递台.安全文本(r.死信号) + '</td>' +
+      '<td><a href="/事件详情.html?事件号=' + encodeURIComponent(r.事件号) + '">' + 投递台.安全文本(r.事件号) + '</a></td>' +
+      '<td>' + 投递台.安全文本(r.端点键) + '</td>' +
+      '<td><b>' + 投递台.安全文本(r.失败次数) + '</b></td>' +
+      '<td>' + 投递台.安全文本(r.阈值 ?? '—') + '</td>' +
+      '<td>' + 投递台.安全文本(r.末次原因) + '</td>' +
+      '<td></td><td>' + 投递台.安全文本(r.出匣态 || '') + '</td>' +
+      '<td>' + 投递台.安全文本(r.事件态 || '') + '</td>' +
+      '<td>' + 投递台.安全文本(r.闸口 || r.命运 || '') + '</td>'
+    );
+    tr.children[6].appendChild(投递台.徽章(r.状态));
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => 选事件(r.事件号);
+    tb.appendChild(tr);
   }
 }
-document.getElementById('重投钮').onclick = async () => {
+
+async function 刷影子() {
+  const rows = await 投递台.getJSON('/api/死信/对账影子');
+  $('影子表').innerHTML = rows.map((r) =>
+    '<tr><td>' + 投递台.安全文本(r.影子号) + '</td><td>' + 投递台.安全文本(r.事件号) +
+    '</td><td>' + 投递台.安全文本(r.类型) + '</td><td>' + 投递台.安全文本(r.失败次数) +
+    '</td><td>' + 投递台.安全文本(r.阈值) + '</td><td>' + 投递台.安全文本(r.判定) +
+    '</td><td>' + 投递台.安全文本(r.详情) + '</td><td>' + 投递台.安全文本(r.批次时刻) + '</td></tr>').join('');
+}
+
+$('自动重投钮').onclick = async () => {
+  const eid = $('事件号').value.trim();
   try {
-    const rep = await 投递台.postJSON('/api/死信/重投', {事件号: document.getElementById('事件号').value});
-    document.getElementById('消息').textContent = JSON.stringify(rep);
-    await 刷表();
-  } catch (e) { document.getElementById('消息').textContent = e.message; }
+    const { status, data } = await 提交('/api/死信/自动重投', { 事件号: eid });
+    显闸(data);
+    $('消息').textContent = (status === 200 ? '已放行出匣并抬回待投：' : '闸口拦截（HTTP ' + status + '）：') + (data.闸口 || data.错误 || '');
+  } catch (e) { $('消息').textContent = e.message; }
+  await 刷表(); await 刷影子(); if (eid) await 刷凭证(eid);
 };
-document.getElementById('作废钮').onclick = async () => {
+$('重投钮').onclick = async () => {
+  const eid = $('事件号').value.trim();
   try {
-    const rep = await 投递台.postJSON('/api/死信/作废', {事件号: document.getElementById('事件号').value});
-    document.getElementById('消息').textContent = JSON.stringify(rep);
-    await 刷表();
-  } catch (e) { document.getElementById('消息').textContent = e.message; }
+    const data = await 投递台.postJSON('/api/死信/重投', { 事件号: eid });
+    $('消息').textContent = '已重投：' + JSON.stringify(data);
+  } catch (e) { $('消息').textContent = e.message; }
+  await 刷表(); if (eid) await 刷凭证(eid);
 };
-刷表();
+$('作废钮').onclick = async () => {
+  const eid = $('事件号').value.trim();
+  try {
+    const data = await 投递台.postJSON('/api/死信/作废', { 事件号: eid });
+    $('消息').textContent = '已作废：' + JSON.stringify(data);
+  } catch (e) { $('消息').textContent = e.message; }
+  await 刷表();
+};
+$('事故钮').onclick = async () => {
+  try {
+    const data = await 投递台.postJSON('/api/夹具/未达阈死信', {});
+    $('事件号').value = data.事件号;
+    $('消息').textContent = '事故夹具已种下：' + data.事件号 + ' 仅失败 ' + data.失败次数 + ' 次（未达阈），现在点「自动重投」应被拦。';
+  } catch (e) { $('消息').textContent = e.message; }
+  await 刷表();
+};
+$('对账钮').onclick = async () => {
+  try {
+    const r = await 提交('/api/死信/对账', {});
+    const d = r.data;
+    $('对账消息').textContent = d.对齐
+      ? '对账对齐：未发现未达阈抬回/匣票双态。'
+      : '对账识破 ' + d.违规数 + ' 起违规（未达阈抬回/匣票双态），已入对账影子，绝不当合法动作。';
+  } catch (e) { $('对账消息').textContent = e.message; }
+  await 刷影子();
+};
+
+(async () => { await 刷表(); await 刷影子();
+  const q = new URLSearchParams(location.search).get('事件号');
+  if (q) await 选事件(q);
+})();
 </script>
 
 </body>

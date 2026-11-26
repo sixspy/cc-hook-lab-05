@@ -48,8 +48,38 @@ CREATE TABLE IF NOT EXISTS 死信 (
   失败次数 INTEGER NOT NULL DEFAULT 0,
   末次原因 TEXT NOT NULL DEFAULT '',
   状态 TEXT NOT NULL DEFAULT '待处置',
+  闸口 TEXT NOT NULL DEFAULT '',
+  出匣态 TEXT NOT NULL DEFAULT '在匣未出',
+  凭证号 TEXT NOT NULL DEFAULT '',
   入匣时 TEXT NOT NULL,
   FOREIGN KEY (事件号) REFERENCES 事件(事件号)
+);
+CREATE TABLE IF NOT EXISTS 重投凭证 (
+  编号 INTEGER PRIMARY KEY AUTOINCREMENT,
+  凭证号 TEXT NOT NULL UNIQUE,
+  事件号 TEXT NOT NULL,
+  死信号 TEXT NOT NULL DEFAULT '',
+  失败次数指纹 INTEGER NOT NULL,
+  阈值 INTEGER NOT NULL,
+  指纹哈希 TEXT NOT NULL,
+  判定 TEXT NOT NULL,
+  闸口 TEXT NOT NULL DEFAULT '',
+  状态 TEXT NOT NULL DEFAULT '',
+  同票 INTEGER NOT NULL DEFAULT 1,
+  骨签 TEXT NOT NULL DEFAULT '',
+  时刻 TEXT NOT NULL,
+  详情 TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS 对账影子 (
+  影子号 INTEGER PRIMARY KEY AUTOINCREMENT,
+  批次时刻 TEXT NOT NULL,
+  事件号 TEXT NOT NULL DEFAULT '',
+  死信号 TEXT NOT NULL DEFAULT '',
+  类型 TEXT NOT NULL,
+  失败次数 INTEGER NOT NULL DEFAULT 0,
+  阈值 INTEGER NOT NULL DEFAULT 3,
+  判定 TEXT NOT NULL,
+  详情 TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS 互证批次 (
   批次号 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,6 +108,16 @@ def 此刻() -> str:
 def 初始化库() -> None:
     conn = 连接()
     conn.executescript(建表)
+    # 轻量幂等迁移：旧库的 死信 表补 hook-05 闸口读出列。
+    已有列 = {r["name"] for r in conn.execute("PRAGMA table_info(死信)").fetchall()}
+    for 列, 定义 in (
+        ("闸口", "TEXT NOT NULL DEFAULT ''"),
+        ("出匣态", "TEXT NOT NULL DEFAULT '在匣未出'"),
+        ("凭证号", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if 列 not in 已有列:
+            conn.execute(f"ALTER TABLE 死信 ADD COLUMN {列} {定义}")
+    conn.commit()
     if conn.execute("SELECT COUNT(*) AS c FROM 用户").fetchone()["c"] == 0:
         conn.execute("INSERT INTO 用户(账号,密码哈希,角色) VALUES (?,?,?)", ("admin", "123456", "管理员"))
     if conn.execute("SELECT COUNT(*) AS c FROM 签名规").fetchone()["c"] == 0:

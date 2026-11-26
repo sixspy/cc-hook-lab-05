@@ -4,7 +4,7 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, request, send_from_directory
 
 from app import seed
-from app.services import 会话, 入队, 投递, 死信, 重试, 互证, 端点, 夹具, 说明, 签名目录
+from app.services import 会话, 入队, 投递, 死信, 重试, 互证, 端点, 夹具, 说明, 签名目录, 自动重投闸, 死信对账
 
 _STATIC = Path(__file__).resolve().parent / "static"
 
@@ -123,6 +123,47 @@ def create_app() -> Flask:
         try:
             return jsonify(死信.作废(body["事件号"], body.get("原因", "人工作废")))
         except (KeyError, ValueError) as e:
+            return jsonify({"错误": str(e)}), 400
+
+    @app.post("/api/死信/自动重投")
+    def api_死信自动重投():
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            verdict = 自动重投闸.自动重投(body["事件号"])
+        except (KeyError, ValueError) as e:
+            return jsonify({"错误": str(e)}), 400
+        # 未达阈是一次「成功的闸口裁决」但动作被拒：回 400，体里带齐页上直读字段。
+        return jsonify(verdict), (200 if verdict.get("放行") else 400)
+
+    @app.get("/api/死信/凭证")
+    def api_死信凭证():
+        事件号 = request.args.get("事件号") or None
+        return jsonify(自动重投闸.凭证列表(事件号))
+
+    @app.post("/api/死信/凭证回刷")
+    def api_死信凭证回刷():
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            return jsonify(自动重投闸.回刷出匣(body["凭证号"]))
+        except (KeyError, ValueError) as e:
+            return jsonify({"错误": str(e)}), 400
+
+    @app.post("/api/死信/对账")
+    def api_死信对账():
+        return jsonify(死信对账.跑对账())
+
+    @app.get("/api/死信/对账影子")
+    def api_死信对账影子():
+        事件号 = request.args.get("事件号") or None
+        return jsonify(死信对账.影子列表(事件号))
+
+    @app.post("/api/夹具/未达阈死信")
+    def api_夹具未达阈死信():
+        try:
+            return jsonify(夹具.播种未达阈死信())
+        except FileNotFoundError as e:
+            return jsonify({"错误": f"缺夹具 {e}"}), 404
+        except ValueError as e:
             return jsonify({"错误": str(e)}), 400
 
     @app.get("/api/端点")

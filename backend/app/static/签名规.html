@@ -34,13 +34,29 @@
   <p class="消息" id="消息"></p>
   <button class="按钮" type="button" id="保存">保存签名规</button>
 </section>
+<section class="卷"><h2>策略中文解读 · 签名规与投递命运</h2><div id="策略中文" class="说明"></div></section>
 <section class="卷"><pre id="规" class="说明"></pre></section>
 
   </main>
 
 <script>
+const 规中文 = {
+  '最大重试': '失败次数阈：投递失败累计达到该次数才准入死信匣；自动重投同样认此阈，未达阈不得出匣。',
+  '产品名': '本投递台产品名。',
+  '主链': '端到端主链：端点登记 → 事件入队 → 签名投递 → 失败重试与死信 → 投递账互证。',
+  '签名算法': 'Webhook 签名算法，投递尝试留签名摘要。',
+  '超时秒': '投递超时闸阈值（秒）。',
+};
 async function 刷() {
-  document.getElementById('规').textContent = JSON.stringify(await 投递台.getJSON('/api/签名规'), null, 2);
+  const 规 = await 投递台.getJSON('/api/签名规');
+  document.getElementById('规').textContent = JSON.stringify(规, null, 2);
+  const 阈 = 规['最大重试'] || '3';
+  const lines = Object.entries(规).map(([k, v]) =>
+    '<p><b>' + 投递台.安全文本(k) + '：</b>' + 投递台.安全文本(规中文[k] || '') +
+    '<br/><span class="徽章">现值 ' + 投递台.安全文本(v) + '</span></p>');
+  lines.unshift('<p class="消息">死信自动重投闸：失败次数须达到 <b>' + 投递台.安全文本(阈) +
+    '</b> 次才放行出匣；未达阈一律留匣，事件不得回待投。这条签名规就是死信与事件的中文命运线——达阈者命运「入匣·可重投」，未达阈者命运「留匣·不回刷」。骨签 hook-05-死信自动重投闸。</p>');
+  document.getElementById('策略中文').innerHTML = lines.join('');
 }
 document.getElementById('保存').onclick = async () => {
   try {

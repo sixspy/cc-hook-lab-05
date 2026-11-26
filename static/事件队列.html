@@ -37,16 +37,24 @@
   <button class="按钮" type="button" id="入队钮">入队（待投）</button>
   <button class="按钮 次" type="button" id="夹具钮">灌夹具样例</button>
 </section>
-<section class="卷"><div class="表绕"><table><thead><tr><th>事件号</th><th>事件类型</th><th>端点键</th><th>载荷摘要</th><th>状态</th></tr></thead><tbody id="表"></tbody></table></div></section>
+<section class="卷"><div class="表绕"><table><thead><tr><th>事件号</th><th>事件类型</th><th>端点键</th><th>载荷摘要</th><th>状态</th><th>中文命运</th></tr></thead><tbody id="表"></tbody></table></div></section>
 
   </main>
 
 <script>
+const 命运图 = {
+  '待投': '待投：已入队，等签名投递',
+  '投递中': '投递中：已占端点，失败计次重试',
+  '待确认': '待确认：现场留存，待互证结案',
+  '已投递': '已投递：签名投递成功结案',
+  '死信': '死信：达阈入匣，须过自动重投闸',
+  '已作废': '已作废：终态不再投递',
+};
 async function 刷表() {
   const rows = await 投递台.getJSON('/api/事件');
   const tb = document.getElementById('表'); tb.innerHTML='';
   for (const r of rows) {
-    const tr = 投递台.行('<td>'+投递台.安全文本(r.事件号)+'</td><td>'+投递台.安全文本(r.事件类型)+'</td><td>'+投递台.安全文本(r.端点键)+'</td><td>'+投递台.安全文本(r.载荷摘要)+'</td><td></td>');
+    const tr = 投递台.行('<td><a href="/事件详情.html?事件号='+encodeURIComponent(r.事件号)+'">'+投递台.安全文本(r.事件号)+'</a></td><td>'+投递台.安全文本(r.事件类型)+'</td><td>'+投递台.安全文本(r.端点键)+'</td><td>'+投递台.安全文本(r.载荷摘要)+'</td><td></td><td>'+投递台.安全文本(r.命运 || 命运图[r.状态] || r.状态)+'</td>');
     tr.children[4].appendChild(投递台.徽章(r.状态)); tb.appendChild(tr);
   }
 }
